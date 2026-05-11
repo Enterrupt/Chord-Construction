@@ -38,22 +38,18 @@
     .note-grid { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 600px; }
     .note-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
     
-    /* Responsive note buttons */
     .note-btn, .interval-btn { padding: 16px 4px; font-size: clamp(16px, 4vw, 24px); font-weight: 700; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
     .note-btn:hover, .interval-btn:hover { background: #ebf8ff; border-color: #bee3f8; color: #2b6cb0; }
     .action-btn { font-size: 16px; padding: 12px 24px; border-radius: 10px; font-weight: 600; border: 2px solid #e2e8f0; margin-top: 12px; }
     
-    /* Feedback States */
     .correct { background: #f0fff4 !important; border-color: #68d391 !important; color: #22543d !important; }
     .incorrect { background: #fff5f5 !important; border-color: #fc8181 !important; color: #742a2a !important; }
     
-    /* Utility class to let clicks pass through disabled buttons */
     .no-pointer { pointer-events: none; }
 
     #nextCue { text-align: center; margin-top: 32px; font-size: 20px; color: #3182ce; font-weight: 700; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
 
-    /* 5. SCORE & SUMMARY */
     .score { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 16px; width: 100%; }
     .score div { background: #f7fafc; padding: 16px; border-radius: 12px; text-align: center; border: 1px solid #edf2f7; }
     .score span { display: block; font-size: 12px; color: #718096; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; }
@@ -61,12 +57,12 @@
     #summary { font-size: 20px; text-align: center; margin-bottom: 32px; }
     .hidden { display: none !important; }
 
-    /* --- 6. MOBILE OPTIMIZATIONS --- */
+    /* MOBILE OPTIMIZATIONS */
     @media (max-width: 600px) {
-        .container { padding: 12px; } /* Give back precious screen width */
+        .container { padding: 12px; }
         .card { padding: 16px; } 
-        #prompt { font-size: 24px; padding: 12px; } /* Shrink long prompts */
-        .note-row { gap: 4px; } /* Squeeze buttons closer together */
+        #prompt { font-size: 24px; padding: 12px; }
+        .note-row { gap: 4px; }
         .note-btn { padding: 12px 2px; font-size: 16px; border-radius: 8px; }
         .score { gap: 8px; }
         .score div { padding: 8px; }
@@ -84,14 +80,14 @@
             <div>
                 <label for="mode">Exercise Mode</label>
                 <select id="mode">
+                    <option value="build7th" selected>Build 7th Chord (No Accidentals)</option>
                     <option value="build">Build Interval (3rds)</option>
                     <option value="identify">Identify Interval (3rds)</option>
-                    <option value="build7th">Build 7th Chord (No Accidentals)</option>
                     <option value="buildTriad">Build Triad (With Accidentals)</option>
                 </select>
             </div>
             
-            <div id="directionGroup">
+            <div id="directionGroup" class="hidden">
                 <label for="direction">Direction</label>
                 <select id="direction">
                     <option value="up">Upward</option>
@@ -100,7 +96,7 @@
                 </select>
             </div>
 
-            <div id="givenNoteGroup" class="hidden">
+            <div id="givenNoteGroup">
                 <label for="givenNote">Given Note</label>
                 <select id="givenNote">
                     <option value="Root">Root</option>
@@ -130,7 +126,7 @@
                 </select>
             </div>
         </div>
-        <p style="margin-top:24px; color:#718096; line-height: 1.5;" id="setupInstructions">Enharmonic equivalents are marked incorrect; exact theoretical spelling is required.</p>
+        <p style="margin-top:24px; color:#718096; line-height: 1.5;" id="setupInstructions">Spell the diatonic 7th chord (using only the white keys A-G). Focus on the fundamental stack of thirds.</p>
         <button class="primary" id="startBtn" style="width: 100%; margin-top: 8px;">Start Practice Session</button>
     </div>
 
@@ -166,7 +162,6 @@ const DISPLAY_ROWS = {
 
 let state = {};
 
-// 1. DYNAMIC UI LOGIC
 document.getElementById('mode').addEventListener('change', (e) => {
     const mode = e.target.value;
     const isChordMode = mode === 'buildTriad' || mode === 'build7th';
@@ -196,7 +191,6 @@ function displayNote(note) {
     return note.replace(/#/g, '♯').replace(/b/g, '♭');
 }
 
-// 2. MUSICAL MATH
 function noteToMidi(note) {
     const m = note.match(/^([A-G])(bb|b|##|#)?$/);
     const letter = m[1];
@@ -223,10 +217,8 @@ function buildDiatonicChord(givenNote, position, size) {
     const positions = ['Root', '3rd', '5th', '7th'];
     const posIndex = positions.indexOf(position);
     const givenLetterIndex = LETTERS.indexOf(givenNote);
-    
     let rootIndex = (givenLetterIndex - (posIndex * 2));
     while(rootIndex < 0) rootIndex += 7;
-    
     const chord = [];
     for(let i = 0; i < size; i++) {
         chord.push(LETTERS[(rootIndex + (i * 2)) % 7]);
@@ -237,25 +229,19 @@ function buildDiatonicChord(givenNote, position, size) {
 function buildTriadAccidentals(givenNote, position, quality) {
     const semitones = { 'Major': [0,4,7], 'Minor': [0,3,7], 'Diminished': [0,3,6] }[quality];
     const posIndex = ['Root', '3rd', '5th'].indexOf(position);
-    
     const m = givenNote.match(/^([A-G])(bb|b|##|#)?$/);
     const givenLetterIndex = LETTERS.indexOf(m[1]);
-    
     const givenPitch = noteToMidi(givenNote);
     const rootPitch = (givenPitch - semitones[posIndex] + 120) % 12;
     const pitches = [rootPitch, (rootPitch + semitones[1]) % 12, (rootPitch + semitones[2]) % 12];
-    
     let rootLetterIndex = (givenLetterIndex - posIndex * 2);
     while(rootLetterIndex < 0) rootLetterIndex += 7;
-    
     const letters = [ LETTERS[rootLetterIndex], LETTERS[(rootLetterIndex+2)%7], LETTERS[(rootLetterIndex+4)%7] ];
     const chord = [];
-    
     for(let i=0; i<3; i++) {
         const basePitch = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[letters[i]];
         let diff = (pitches[i] - basePitch + 12) % 12;
         if (diff > 6) diff -= 12;
-        
         const accMap = {'-2':'bb', '-1':'b', '0':'', '1':'#', '2':'##'};
         if (!(diff in accMap)) throw new Error('Unsupported accidental');
         chord.push(letters[i] + accMap[diff]);
@@ -268,7 +254,6 @@ function answerIsDisplayable(note) {
     return all.includes(note);
 }
 
-// 3. SESSION LOGIC
 function shuffle(array) {
     let currentIndex = array.length, randomIndex;
     while (currentIndex !== 0) {
@@ -286,12 +271,9 @@ function buildQuestionPool() {
     if (mode === 'buildTriad') {
         const validPositions = ['Root', '3rd', '5th'];
         const positions = state.givenNote === 'random' ? validPositions : [state.givenNote];
-        
         const validQualities = ['Major', 'Minor', 'Diminished'];
         const qualities = state.chordQuality === 'random' ? validQualities : [state.chordQuality];
-        
         const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
-        
         for (let pos of positions) {
             for (let qual of qualities) {
                 for (let start of starts) {
@@ -316,7 +298,6 @@ function buildQuestionPool() {
         const dirs = state.direction === 'random' ? ['up', 'down'] : [state.direction];
         const qualities = ['M3', 'm3'];
         const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
-
         for (let dir of dirs) {
             for (let quality of qualities) {
                 for (let start of starts) {
@@ -333,29 +314,16 @@ function buildQuestionPool() {
 
 function formatQuestion(q) {
     if (state.mode === 'buildTriad') {
-        return {
-            prompt: `Build the ${q.quality} triad where the ${q.position} is ${displayNote(q.start)}`,
-            answer: q.result, type: 'triad'
-        };
+        return { prompt: `Build the ${q.quality} triad where the ${q.position} is ${displayNote(q.start)}`, answer: q.result, type: 'triad' };
     } else if (state.mode === 'build7th') {
-        return {
-            prompt: `Build the diatonic 7th chord where the ${q.position} is ${q.start}`,
-            answer: q.result, type: 'chord'
-        };
+        return { prompt: `Build the diatonic 7th chord where the ${q.position} is ${q.start}`, answer: q.result, type: 'chord' };
     } else if (state.mode === 'build') {
-        return {
-            prompt: `${displayNote(q.start)} → (${q.quality === 'M3' ? 'Major 3rd' : 'Minor 3rd'} ${q.direction})`,
-            answer: q.result, type: 'note'
-        };
+        return { prompt: `${displayNote(q.start)} → (${q.quality === 'M3' ? 'Major 3rd' : 'Minor 3rd'} ${q.direction})`, answer: q.result, type: 'note' };
     } else {
-        return {
-            prompt: `${displayNote(q.start)} → ${displayNote(q.result)} (${q.direction})`,
-            answer: q.quality, type: 'quality'
-        };
+        return { prompt: `${displayNote(q.start)} → ${displayNote(q.result)} (${q.direction})`, answer: q.quality, type: 'quality' };
     }
 }
 
-// 4. RENDER & INPUT
 function renderAnswerArea() {
     const area = document.getElementById('answerArea');
     const inputDisplay = document.getElementById('chordInputDisplay');
@@ -364,10 +332,8 @@ function renderAnswerArea() {
     if (state.current.type === 'triad' || state.current.type === 'chord') {
         inputDisplay.classList.remove('hidden');
         updateChordInputDisplay();
-
         const wrap = document.createElement('div');
         wrap.style.display = 'flex'; wrap.style.flexDirection = 'column'; wrap.style.alignItems = 'center'; wrap.style.gap = '20px'; wrap.style.width = '100%';
-
         if (state.current.type === 'chord') { 
             const row = document.createElement('div');
             row.className = 'note-row';
@@ -386,8 +352,7 @@ function renderAnswerArea() {
                 row.className = 'note-row';
                 DISPLAY_ROWS[rowName].forEach(note => {
                     const btn = document.createElement('button');
-                    btn.className = 'note-btn'; 
-                    btn.textContent = displayNote(note);
+                    btn.className = 'note-btn'; btn.textContent = displayNote(note);
                     btn.onclick = () => handleChordInput(note);
                     row.appendChild(btn);
                 });
@@ -395,7 +360,6 @@ function renderAnswerArea() {
             });
             wrap.appendChild(grid);
         }
-        
         const clearBtn = document.createElement('button');
         clearBtn.className = 'action-btn'; clearBtn.textContent = '⌫ Clear Spelling';
         clearBtn.onclick = () => {
@@ -403,10 +367,8 @@ function renderAnswerArea() {
             updateChordInputDisplay();
             document.querySelectorAll('#answerArea .note-btn').forEach(b => b.disabled = false);
         };
-
         wrap.appendChild(clearBtn);
         area.appendChild(wrap);
-
     } else {
         inputDisplay.classList.add('hidden');
         if (state.current.type === 'note') {
@@ -441,8 +403,7 @@ function renderAnswerArea() {
 function updateChordInputDisplay() {
     const display = document.getElementById('chordInputDisplay');
     display.innerHTML = '';
-    const size = state.current.type === 'triad' ? 3 : 4;
-    
+    const size = (state.current.type === 'triad') ? 3 : 4;
     for(let i = 0; i < size; i++) {
         const slot = document.createElement('div');
         slot.className = 'chord-slot';
@@ -458,12 +419,10 @@ function updateChordInputDisplay() {
 
 function handleChordInput(note) {
     if (state.answeredCorrectly) return;
-    const size = state.current.type === 'triad' ? 3 : 4;
+    const size = (state.current.type === 'triad') ? 3 : 4;
     if (state.currentInput.length >= size) return;
-
     state.currentInput.push(note);
     updateChordInputDisplay();
-
     if (state.currentInput.length === size) {
         const isCorrect = state.currentInput.every((val, i) => val === state.current.answer[i]);
         const slots = document.querySelectorAll('.chord-slot');
@@ -504,9 +463,7 @@ function triggerCorrectAdvance() {
     document.querySelectorAll('#answerArea button').forEach(b => {
         if (!b.classList.contains('correct') && b.textContent !== '⌫ Clear Spelling') b.disabled = true;
     });
-    
     document.getElementById('answerArea').classList.add('no-pointer');
-    
     document.getElementById('nextCue').classList.remove('hidden');
     setTimeout(() => {
         const handler = () => { document.removeEventListener('click', handler); nextQuestion(); };
@@ -518,9 +475,7 @@ function loadQuestion() {
     state.current = state.queue.shift();
     state.answeredCorrectly = false;
     state.currentInput = [];
-    
     document.getElementById('answerArea').classList.remove('no-pointer');
-    
     document.getElementById('prompt').textContent = state.current.prompt;
     document.getElementById('nextCue').classList.add('hidden');
     renderAnswerArea();
@@ -551,12 +506,10 @@ function startSession() {
     };
     const pool = buildQuestionPool();
     if (pool.length === 0) return;
-    
     while (state.queue.length < state.totalQuestions) {
         let shuffled = shuffle([...pool]);
         state.queue.push(...shuffled);
     }
-    
     state.queue = state.queue.slice(0, state.totalQuestions).map(q => formatQuestion(q));
     document.getElementById('setupCard').classList.add('hidden');
     document.getElementById('practiceCard').classList.remove('hidden');
