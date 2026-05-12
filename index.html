@@ -40,10 +40,15 @@
     
     .note-btn, .interval-btn { padding: 16px 4px; font-size: clamp(16px, 4vw, 24px); font-weight: 700; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
     .note-btn:hover, .interval-btn:hover { background: #ebf8ff; border-color: #bee3f8; color: #2b6cb0; }
+    
     .action-btn { font-size: 16px; padding: 12px 24px; border-radius: 10px; font-weight: 600; border: 2px solid #e2e8f0; margin-top: 12px; }
     
+    .instruction-note { font-style: italic; color: #718096; margin: 8px 0; font-size: 14px; text-align: center; }
+
+    /* Feedback States */
     .correct { background: #f0fff4 !important; border-color: #68d391 !important; color: #22543d !important; }
     .incorrect { background: #fff5f5 !important; border-color: #fc8181 !important; color: #742a2a !important; }
+    .given-note-lock { background: #edf2f7 !important; color: #a0aec0 !important; border-color: #cbd5e0 !important; cursor: not-allowed; }
     
     .no-pointer { pointer-events: none; }
 
@@ -86,6 +91,14 @@
                     <option value="buildTriad">Build Triad (With Accidentals)</option>
                 </select>
             </div>
+
+            <div id="difficultyGroup">
+                <label for="difficulty">Difficulty</label>
+                <select id="difficulty">
+                    <option value="beginner" selected>Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                </select>
+            </div>
             
             <div id="directionGroup" class="hidden">
                 <label for="direction">Direction</label>
@@ -97,7 +110,7 @@
             </div>
 
             <div id="givenNoteGroup">
-                <label for="givenNote">Given Note</label>
+                <label for="givenNote">Given Chord Tone</label>
                 <select id="givenNote">
                     <option value="Root">Root</option>
                     <option value="3rd">3rd</option>
@@ -142,7 +155,7 @@
 
         <div id="prompt"></div>
         <div id="chordInputDisplay" class="hidden"></div>
-        <div id="answerArea" style="display: flex; justify-content: center;"></div>
+        <div id="answerArea" style="display: flex; flex-direction: column; align-items: center;"></div>
         <div id="nextCue" class="hidden">Click anywhere to continue...</div>
     </div>
 
@@ -162,14 +175,17 @@ const DISPLAY_ROWS = {
 
 let state = {};
 
+// Handle UI toggles
 document.getElementById('mode').addEventListener('change', (e) => {
     const mode = e.target.value;
     const isChordMode = mode === 'buildTriad' || mode === 'build7th';
     const isTriadMode = mode === 'buildTriad';
+    const is7thMode = mode === 'build7th';
     
     document.getElementById('directionGroup').classList.toggle('hidden', isChordMode);
     document.getElementById('givenNoteGroup').classList.toggle('hidden', !isChordMode);
     document.getElementById('chordQualityGroup').classList.toggle('hidden', !isTriadMode);
+    document.getElementById('difficultyGroup').classList.toggle('hidden', !is7thMode);
     
     const opt7th = document.getElementById('opt7th');
     opt7th.disabled = isTriadMode;
@@ -303,7 +319,7 @@ function buildQuestionPool() {
                 for (let start of starts) {
                     try {
                         const result = buildThird(start, quality, dir);
-                        if (answerIsDisplayable(result)) pool.push({ start, quality, direction: dir, result });
+                        if (answerIsDisplayable(result)) pool.push({ start, quality, direction: dir, result, rawStart: start });
                     } catch(e) { }
                 }
             }
@@ -318,10 +334,25 @@ function formatQuestion(q) {
     } else if (state.mode === 'build7th') {
         return { prompt: `Build the diatonic 7th chord where the ${q.position} is ${q.start}`, answer: q.result, type: 'chord' };
     } else if (state.mode === 'build') {
-        return { prompt: `${displayNote(q.start)} → (${q.quality === 'M3' ? 'Major 3rd' : 'Minor 3rd'} ${q.direction})`, answer: q.result, type: 'note' };
+        return { prompt: `${displayNote(q.start)} → (${q.quality === 'M3' ? 'Major 3rd' : 'Minor 3rd'} ${q.direction})`, answer: q.result, type: 'note', givenNote: q.rawStart };
     } else {
         return { prompt: `${displayNote(q.start)} → ${displayNote(q.result)} (${q.direction})`, answer: q.quality, type: 'quality' };
     }
+}
+
+function getNoteOrder() {
+    if (state.difficulty === 'beginner' || state.mode !== 'build7th') return LETTERS;
+    
+    const orders = [
+        ['F','C','G','D','A','E','B'], 
+        ['B','E','A','D','G','C','F'], 
+        ['G','F','E','D','C','B','A'], 
+        shuffle([...LETTERS])          
+    ];
+    
+    const choice = orders[state.orderIndex % orders.length];
+    state.orderIndex++;
+    return choice;
 }
 
 function renderAnswerArea() {
@@ -329,15 +360,27 @@ function renderAnswerArea() {
     const inputDisplay = document.getElementById('chordInputDisplay');
     area.innerHTML = '';
     
-    if (state.current.type === 'triad' || state.current.type === 'chord') {
-        inputDisplay.classList.remove('hidden');
-        updateChordInputDisplay();
+    if (state.current.type === 'triad' || state.current.type === 'chord' || state.current.type === 'note') {
         const wrap = document.createElement('div');
-        wrap.style.display = 'flex'; wrap.style.flexDirection = 'column'; wrap.style.alignItems = 'center'; wrap.style.gap = '20px'; wrap.style.width = '100%';
+        wrap.style.display = 'flex'; wrap.style.flexDirection = 'column'; wrap.style.alignItems = 'center'; wrap.style.gap = '8px'; wrap.style.width = '100%';
+
+        // Add instructions based on mode
+        const instr = document.createElement('div');
+        instr.className = 'instruction-note';
+        if (state.current.type === 'note') {
+            instr.textContent = 'Select the note that is the requested 3rd.';
+        } else {
+            instr.textContent = 'Say the name of the note as you select it.';
+        }
+        wrap.appendChild(instr);
+
         if (state.current.type === 'chord') { 
+            inputDisplay.classList.remove('hidden');
+            updateChordInputDisplay();
+            const currentOrder = getNoteOrder();
             const row = document.createElement('div');
             row.className = 'note-row';
-            LETTERS.forEach(note => {
+            currentOrder.forEach(note => {
                 const btn = document.createElement('button');
                 btn.className = 'note-btn'; btn.textContent = note;
                 btn.onclick = () => handleChordInput(note);
@@ -345,6 +388,13 @@ function renderAnswerArea() {
             });
             wrap.appendChild(row);
         } else { 
+            if(state.current.type === 'triad') {
+                inputDisplay.classList.remove('hidden');
+                updateChordInputDisplay();
+            } else {
+                inputDisplay.classList.add('hidden');
+            }
+
             const grid = document.createElement('div');
             grid.className = 'note-grid';
             ['sharp','natural','flat'].forEach(rowName => {
@@ -353,50 +403,49 @@ function renderAnswerArea() {
                 DISPLAY_ROWS[rowName].forEach(note => {
                     const btn = document.createElement('button');
                     btn.className = 'note-btn'; btn.textContent = displayNote(note);
-                    btn.onclick = () => handleChordInput(note);
+                    
+                    // Lock the given note in "Build Interval" mode
+                    if (state.current.type === 'note' && note === state.current.givenNote) {
+                        btn.classList.add('given-note-lock');
+                        btn.disabled = true;
+                    } else {
+                        btn.onclick = () => {
+                            if (state.current.type === 'note') checkSingleAnswer(note, btn);
+                            else handleChordInput(note);
+                        };
+                    }
                     row.appendChild(btn);
                 });
                 grid.appendChild(row);
             });
             wrap.appendChild(grid);
         }
-        const clearBtn = document.createElement('button');
-        clearBtn.className = 'action-btn'; clearBtn.textContent = '⌫ Clear Spelling';
-        clearBtn.onclick = () => {
-            state.currentInput = [];
-            updateChordInputDisplay();
-            document.querySelectorAll('#answerArea .note-btn').forEach(b => b.disabled = false);
-        };
-        wrap.appendChild(clearBtn);
+
+        if (state.current.type === 'triad' || state.current.type === 'chord') {
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'action-btn'; clearBtn.textContent = '⌫ Clear Spelling';
+            clearBtn.onclick = () => {
+                state.currentInput = [];
+                updateChordInputDisplay();
+                document.querySelectorAll('#answerArea .note-btn').forEach(b => {
+                    if(!b.classList.contains('given-note-lock')) b.disabled = false;
+                });
+            };
+            wrap.appendChild(clearBtn);
+        }
+        
         area.appendChild(wrap);
     } else {
         inputDisplay.classList.add('hidden');
-        if (state.current.type === 'note') {
-            const grid = document.createElement('div');
-            grid.className = 'note-grid';
-            ['sharp','natural','flat'].forEach(rowName => {
-                const row = document.createElement('div');
-                row.className = 'note-row';
-                DISPLAY_ROWS[rowName].forEach(note => {
-                    const btn = document.createElement('button');
-                    btn.className = 'note-btn'; btn.textContent = displayNote(note);
-                    btn.onclick = () => checkSingleAnswer(note, btn);
-                    row.appendChild(btn);
-                });
-                grid.appendChild(row);
-            });
-            area.appendChild(grid);
-        } else {
-            const wrap = document.createElement('div');
-            wrap.style.display = 'flex'; wrap.style.justifyContent = 'center'; wrap.style.gap = '24px';
-            ['M3', 'm3'].forEach(val => {
-                const btn = document.createElement('button');
-                btn.className = 'interval-btn'; btn.textContent = val;
-                btn.onclick = () => checkSingleAnswer(val, btn);
-                wrap.appendChild(btn);
-            });
-            area.appendChild(wrap);
-        }
+        const wrap = document.createElement('div');
+        wrap.style.display = 'flex'; wrap.style.justifyContent = 'center'; wrap.style.gap = '24px';
+        ['M3', 'm3'].forEach(val => {
+            const btn = document.createElement('button');
+            btn.className = 'interval-btn'; btn.textContent = val;
+            btn.onclick = () => checkSingleAnswer(val, btn);
+            wrap.appendChild(btn);
+        });
+        area.appendChild(wrap);
     }
 }
 
@@ -487,7 +536,11 @@ function nextQuestion() {
         document.getElementById('summaryCard').classList.remove('hidden');
         const attempts = state.correct + state.incorrect;
         const accuracy = attempts === 0 ? 100 : Math.round((state.correct / attempts) * 100);
-        document.getElementById('summary').innerHTML = `<h2>Practice Complete!</h2><p><strong>${state.correct}</strong> correct out of <strong>${state.totalQuestions}</strong> questions.</p><p><strong>${state.incorrect}</strong> incorrect attempts.</p><p><strong>${accuracy}% Final Accuracy.</strong></p>`;
+        document.getElementById('summary').innerHTML = `
+            <h2>Practice Complete!</h2>
+            <p><strong>${state.incorrect}</strong> incorrect attempts.</p>
+            <p><strong>${accuracy}% Final Accuracy.</strong></p>
+        `;
     } else {
         loadQuestion();
     }
@@ -496,13 +549,15 @@ function nextQuestion() {
 function startSession() {
     state = {
         mode: document.getElementById('mode').value,
+        difficulty: document.getElementById('difficulty').value,
         direction: document.getElementById('direction').value,
         givenNote: document.getElementById('givenNote').value,
         chordQuality: document.getElementById('chordQuality').value, 
         totalQuestions: parseInt(document.getElementById('sessionLength').value, 10),
         completed: 0, correct: 0, incorrect: 0,
         current: null, answeredCorrectly: false,
-        currentInput: [], queue: []
+        currentInput: [], queue: [],
+        orderIndex: 0
     };
     const pool = buildQuestionPool();
     if (pool.length === 0) return;
