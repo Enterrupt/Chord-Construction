@@ -31,8 +31,8 @@
     .note-grid { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 600px; }
     .note-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
     
-    .note-btn { padding: 16px 4px; font-size: clamp(14px, 3.5vw, 20px); font-weight: 700; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
-    .note-btn:hover { background: #ebf8ff; border-color: #bee3f8; }
+    .note-btn, .interval-btn { padding: 16px 4px; font-size: clamp(14px, 3.5vw, 20px); font-weight: 700; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
+    .note-btn:hover, .interval-btn:hover { background: #ebf8ff; border-color: #bee3f8; }
     
     .action-btn { font-size: 16px; padding: 12px 24px; border-radius: 10px; font-weight: 600; border: 2px solid #e2e8f0; margin-top: 12px; }
     .instruction-note { font-style: italic; color: #718096; margin: 4px 0; font-size: 14px; text-align: center; line-height: 1.4; }
@@ -44,6 +44,8 @@
     .correct-btn { background: #f0fff4 !important; border-color: #68d391 !important; color: #22543d !important; }
     .incorrect-btn { background: #fff5f5 !important; border-color: #fc8181 !important; color: #742a2a !important; }
     
+    .given-note-lock { background: #edf2f7 !important; color: #a0aec0 !important; border-color: #cbd5e0 !important; cursor: not-allowed; }
+
     .no-pointer { pointer-events: none; }
     .hidden { display: none !important; }
 
@@ -68,7 +70,7 @@
             <div>
                 <label for="mode">Exercise Mode</label>
                 <select id="mode">
-                    <option value="build7th" selected>Build 7th Chord (No Accidentals)</option>
+                    <option value="build7th" selected>Build 7th Chord (C Major / Natural Notes)</option>
                     <option value="build">Build Interval (3rds)</option>
                     <option value="identify">Identify Interval (3rds)</option>
                     <option value="buildTriad">Build Triad (With Accidentals)</option>
@@ -152,12 +154,12 @@ function updateSetupUI() {
     
     const instr = document.getElementById('setupInstructions');
     if(mode === 'buildDom') instr.innerHTML = "<b>Dominant 7th:</b> Spell the chord from the Root up. <br>Remember: Root - M3 - P5 - m7 (or M3 - m3 - m3).";
-    else if(mode === 'build7th') instr.textContent = "Spell the diatonic 7th chord (white keys A-G) from the Root up.";
+    else if(mode === 'build7th') instr.textContent = "Spell the natural note 7th chord (C Major scale) from the Root up.";
     else if(mode === 'buildTriad') instr.textContent = "Spell the exact triad from the root up including necessary accidentals.";
     else instr.textContent = "Exact theoretical spelling is required.";
 }
 document.getElementById('mode').addEventListener('change', updateSetupUI);
-updateSetupUI();
+window.onload = updateSetupUI;
 
 function displayNote(n) { return n.replace(/#/g, '♯').replace(/b/g, '♭'); }
 
@@ -168,15 +170,25 @@ function noteToMidi(note) {
     return (base + offset + 120) % 12;
 }
 
+function buildThird(start, quality, direction) {
+    const startIndex = LETTERS.indexOf(start.charAt(0));
+    const targetLetter = LETTERS[(startIndex + (direction === 'up' ? 2 : 5)) % 7];
+    const startPitch = noteToMidi(start);
+    const targetPitch = (startPitch + (direction === 'up' ? 1 : -1) * (quality === 'M3' ? 4 : 3) + 120) % 12;
+    const targetBase = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[targetLetter];
+    let diff = (targetPitch - targetBase + 12) % 12;
+    if (diff > 6) diff -= 12;
+    const accMap = {'-2':'bb', '-1':'b', '0':'', '1':'#', '2':'##'};
+    return targetLetter + accMap[diff];
+}
+
 function buildSpecificChord(start, position, intervals) {
     const m = start.match(/^([A-G])(bb|b|##|#)?$/);
     const startPitch = noteToMidi(start);
     const posIdx = ['Root','3rd','5th','7th'].indexOf(position);
     const rootPitch = (startPitch - intervals[posIdx] + 120) % 12;
-    
     let rootLetterIdx = (LETTERS.indexOf(m[1]) - posIdx * 2);
     while(rootLetterIdx < 0) rootLetterIdx += 7;
-    
     const chord = [];
     for(let i=0; i<intervals.length; i++) {
         const targetLetter = LETTERS[(rootLetterIdx + i*2) % 7];
@@ -196,49 +208,61 @@ function getValidPool() {
     if(mode === 'buildDom') {
         const qualities = state.givenNote === 'random' ? ['Root','3rd','5th','7th'] : [state.givenNote];
         const starts = [...DISPLAY_ROWS.natural, 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'F#', 'C#'];
-        starts.forEach(s => {
-            qualities.forEach(q => {
-                try {
-                    const res = buildSpecificChord(s, q, [0,4,7,10]);
-                    const keyRootPitch = (noteToMidi(res[0]) + 5) % 12;
-                    const keyLetter = LETTERS[(LETTERS.indexOf(res[0].charAt(0)) + 3) % 7];
-                    const baseK = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[keyLetter];
-                    let kDiff = (keyRootPitch - baseK + 12) % 12; if(kDiff > 6) kDiff -= 12;
-                    const keyName = keyLetter + {'-1':'b','0':'','1':'#'}[kDiff];
-                    if(res.every(n => [...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(n)) && keyName.length <= 2) {
-                        pool.push({prompt: `Build the Dominant 7th chord where ${q} is ${displayNote(s)}`, answer: res, key: keyName + " Major"});
-                    }
-                } catch(e){}
-            });
-        });
+        starts.forEach(s => qualities.forEach(q => {
+            try {
+                const res = buildSpecificChord(s, q, [0,4,7,10]);
+                const keyRootPitch = (noteToMidi(res[0]) + 5) % 12;
+                const keyLetter = LETTERS[(LETTERS.indexOf(res[0].charAt(0)) + 3) % 7];
+                const baseK = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[keyLetter];
+                let kDiff = (keyRootPitch - baseK + 12) % 12; if(kDiff > 6) kDiff -= 12;
+                const keyName = keyLetter + {'-1':'b','0':'','1':'#'}[kDiff];
+                if(res.every(n => [...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(n)) && keyName.length <= 2) {
+                    pool.push({prompt: `Build the Dominant 7th chord where ${q} is ${displayNote(s)}`, answer: res, key: keyName + " Major", type: 'chord'});
+                }
+            } catch(e){}
+        }));
     } else if(mode === 'build7th') {
         const qualities = state.givenNote === 'random' ? ['Root','3rd','5th','7th'] : [state.givenNote];
         LETTERS.forEach(s => qualities.forEach(q => {
             let rootIdx = (LETTERS.indexOf(s) - ['Root','3rd','5th','7th'].indexOf(q)*2);
             while(rootIdx < 0) rootIdx += 7;
             const res = [0,2,4,6].map(i => LETTERS[(rootIdx+i)%7]);
-            pool.push({prompt: `Build the diatonic 7th chord where ${q} is ${s}`, answer: res});
+            pool.push({prompt: `In C Major, build the 7th chord where ${q} is ${s}`, answer: res, type: 'chord'});
         }));
+    } else if (mode === 'build' || mode === 'identify') {
+        const dirs = state.direction === 'random' ? ['up', 'down'] : [state.direction];
+        const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
+        dirs.forEach(dir => ['M3', 'm3'].forEach(q => starts.forEach(s => {
+            try {
+                const res = buildThird(s, q, dir);
+                if([...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(res)) {
+                    if(mode === 'build') pool.push({prompt: `${displayNote(s)} → (${q === 'M3' ? 'Major 3rd' : 'Minor 3rd'} ${dir})`, answer: res, type: 'note', givenNote: s});
+                    else pool.push({prompt: `${displayNote(s)} → ${displayNote(res)} (${dir})`, answer: q, type: 'quality'});
+                }
+            } catch(e){}
+        })));
+    } else if (mode === 'buildTriad') {
+        const validPos = ['Root', '3rd', '5th'];
+        const positions = state.givenNote === 'random' ? validPos : [state.givenNote];
+        const validQuals = state.chordQuality === 'random' ? ['Major', 'Minor', 'Diminished'] : [state.chordQuality];
+        const semitones = { 'Major': [0,4,7], 'Minor': [0,3,7], 'Diminished': [0,3,6] };
+        const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
+        starts.forEach(s => positions.forEach(p => validQuals.forEach(q => {
+            try {
+                const res = buildSpecificChord(s, p, semitones[q]);
+                if(res.every(n => [...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(n))) {
+                    pool.push({prompt: `Build the ${q} triad where ${p} is ${displayNote(s)}`, answer: res, type: 'chord'});
+                }
+            } catch(e){}
+        })));
     }
     return pool;
 }
 
 function getNoteOrder() {
-    // Beginner or non-chord modes stay alphabetical
-    if (state.difficulty === 'beginner' || !state.mode.includes('build')) return LETTERS;
-    
-    const orders = [
-        ['F','C','G','D','A','E','B'], // 5ths
-        ['B','E','A','D','G','C','F'], // 4ths
-        ['G','F','E','D','C','B','A'], // Rev Alpha
-        ['A','B','C','D','E','F','G'], // Std Alpha
-        ['A','C','E','G','B','D','F'], // Inc 3rds
-        ['F','D','B','G','E','C','A']  // Dec 3rds
-    ];
-    
-    // Cycle based on completed count
-    const choice = orders[state.completed % orders.length];
-    return choice;
+    if (state.difficulty === 'beginner') return LETTERS;
+    const orders = [['F','C','G','D','A','E','B'],['B','E','A','D','G','C','F'],['G','F','E','D','C','B','A'],['A','B','C','D','E','F','G'],['A','C','E','G','B','D','F'],['F','D','B','G','E','C','A']];
+    return orders[state.completed % orders.length];
 }
 
 function renderAnswerArea() {
@@ -262,45 +286,37 @@ function renderAnswerArea() {
         });
         keyGrid.style.gridTemplateColumns = "repeat(5, 1fr)";
         wrap.appendChild(keyGrid);
-    } else {
+    } else if (state.current.type === 'chord') {
         const instr = document.createElement('div'); instr.className = 'instruction-note';
         instr.textContent = "Say the name of the note as you select it.";
         wrap.appendChild(instr);
-
-        if (state.mode === 'buildDom') {
-            const formula = document.createElement('div');
-            formula.className = 'formula-note';
+        if(state.mode === 'buildDom') {
+            const formula = document.createElement('div'); formula.className = 'formula-note';
             formula.textContent = 'Remember: Root - M3 - P5 - m7 (or M3 - m3 - m3).';
             wrap.appendChild(formula);
         }
         
-        // Rows determined by mode
-        const rowTypes = (state.mode === 'build7th' && state.difficulty === 'beginner') ? ['natural'] : ['sharp','natural','flat'];
+        const isNaturalMode = state.mode === 'build7th';
+        const rowTypes = isNaturalMode ? ['natural'] : ['sharp','natural','flat'];
         const currentOrder = getNoteOrder();
 
         rowTypes.forEach(r => {
             const row = document.createElement('div'); row.className = 'note-row';
             let notes = [...DISPLAY_ROWS[r]];
-            
-            // Apply the cyclic order to each row
             notes.sort((a,b) => currentOrder.indexOf(a.charAt(0)) - currentOrder.indexOf(b.charAt(0)));
-
             notes.forEach(n => {
                 const btn = document.createElement('button'); btn.className = 'note-btn'; btn.textContent = displayNote(n);
                 btn.onclick = () => {
                     if(state.answeredCorrectly) return;
                     state.currentInput.push(n); updateChordDisplay();
                     if(state.currentInput.length === state.current.answer.length) {
-                        const isCorrect = state.currentInput.every((v,i) => v === state.current.answer[i]);
-                        const slots = document.querySelectorAll('.chord-slot');
-                        if(isCorrect) {
-                            slots.forEach(s => s.classList.add('correct-text'));
-                            if(state.difficulty === 'intermediate' && state.mode === 'buildDom') {
-                                triggerMidAdvance();
-                            } else triggerAdvance();
+                        if(state.currentInput.every((v,i) => v === state.current.answer[i])) {
+                            document.querySelectorAll('.chord-slot').forEach(s => s.classList.add('correct-text'));
+                            if(state.difficulty === 'intermediate' && state.mode === 'buildDom') triggerMidAdvance();
+                            else triggerAdvance();
                         } else {
                             state.incorrect++; updateScore();
-                            slots.forEach(s => s.classList.add('incorrect-text'));
+                            document.querySelectorAll('.chord-slot').forEach(s => s.classList.add('incorrect-text'));
                         }
                     }
                 };
@@ -309,38 +325,47 @@ function renderAnswerArea() {
             wrap.appendChild(row);
         });
         const clr = document.createElement('button'); clr.className = 'action-btn'; clr.textContent = '⌫ Clear';
-        clr.onclick = () => { 
-            state.currentInput = []; updateChordDisplay(); 
-            document.querySelectorAll('.chord-slot').forEach(s => s.classList.remove('incorrect-text', 'correct-text'));
-        };
+        clr.onclick = () => { state.currentInput = []; updateChordDisplay(); document.querySelectorAll('.chord-slot').forEach(s => s.classList.remove('incorrect-text', 'correct-text')); };
         wrap.appendChild(clr);
+    } else if (state.current.type === 'note') {
+        const instr = document.createElement('div'); instr.className = 'instruction-note';
+        instr.textContent = 'Select the note that is the requested 3rd.';
+        wrap.appendChild(instr);
+        ['sharp','natural','flat'].forEach(r => {
+            const row = document.createElement('div'); row.className = 'note-row';
+            DISPLAY_ROWS[r].forEach(n => {
+                const btn = document.createElement('button'); btn.className = 'note-btn'; btn.textContent = displayNote(n);
+                if(n === state.current.givenNote) { btn.classList.add('given-note-lock'); btn.disabled = true; }
+                else { btn.onclick = () => { if(n === state.current.answer) { btn.classList.add('correct-btn'); triggerAdvance(); } else { state.incorrect++; updateScore(); btn.classList.add('incorrect-btn'); setTimeout(() => btn.classList.remove('incorrect-btn'), 600); } }; }
+                row.appendChild(btn);
+            });
+            wrap.appendChild(row);
+        });
+    } else { // Quality mode
+        const wrapQ = document.createElement('div'); wrapQ.style.display = 'flex'; wrapQ.style.gap = '24px';
+        ['M3', 'm3'].forEach(q => {
+            const btn = document.createElement('button'); btn.className = 'interval-btn'; btn.textContent = q;
+            btn.onclick = () => { if(q === state.current.answer) { btn.classList.add('correct-btn'); triggerAdvance(); } else { state.incorrect++; updateScore(); btn.classList.add('incorrect-btn'); setTimeout(() => btn.classList.remove('incorrect-btn'), 600); } };
+            wrapQ.appendChild(btn);
+        });
+        area.appendChild(wrapQ);
     }
     area.appendChild(wrap);
 }
 
 function updateChordDisplay() {
-    const disp = document.getElementById('chordInputDisplay'); disp.classList.remove('hidden');
+    const disp = document.getElementById('chordInputDisplay'); disp.classList.toggle('hidden', state.current.type !== 'chord');
     disp.innerHTML = state.current.answer.map((_,i) => `<div class="chord-slot ${state.currentInput[i]?'filled':''}">${displayNote(state.currentInput[i]||'_')}</div>`).join('');
 }
 
 function triggerMidAdvance() {
-    state.answeredCorrectly = true;
-    document.getElementById('answerArea').classList.add('no-pointer');
-    document.getElementById('nextCue').classList.remove('hidden');
-    const h = () => {
-        document.removeEventListener('click', h);
-        state.stage = 'key'; state.answeredCorrectly = false;
-        document.getElementById('answerArea').classList.remove('no-pointer');
-        document.getElementById('nextCue').classList.add('hidden');
-        renderAnswerArea();
-    };
+    state.answeredCorrectly = true; document.getElementById('answerArea').classList.add('no-pointer'); document.getElementById('nextCue').classList.remove('hidden');
+    const h = () => { document.removeEventListener('click', h); state.stage = 'key'; state.answeredCorrectly = false; document.getElementById('answerArea').classList.remove('no-pointer'); document.getElementById('nextCue').classList.add('hidden'); renderAnswerArea(); };
     setTimeout(() => document.addEventListener('click', h), 10);
 }
 
 function triggerAdvance() {
-    state.answeredCorrectly = true; state.completed++; updateScore();
-    document.getElementById('answerArea').classList.add('no-pointer');
-    document.getElementById('nextCue').classList.remove('hidden');
+    state.answeredCorrectly = true; state.completed++; updateScore(); document.getElementById('answerArea').classList.add('no-pointer'); document.getElementById('nextCue').classList.remove('hidden');
     const h = () => { document.removeEventListener('click', h); nextQ(); };
     setTimeout(() => document.addEventListener('click', h), 10);
 }
@@ -349,8 +374,7 @@ function nextQ() {
     if(state.completed >= state.total) {
         document.getElementById('practiceCard').classList.add('hidden');
         document.getElementById('summaryCard').classList.remove('hidden');
-        const attempts = state.completed + state.incorrect;
-        document.getElementById('summary').innerHTML = `<h2>Complete!</h2><p>Accuracy: ${Math.round((state.completed/attempts)*100)}%</p>`;
+        document.getElementById('summary').innerHTML = `<h2>Complete!</h2><p>Accuracy: ${Math.round((state.completed/(state.completed+state.incorrect))*100)}%</p>`;
     } else {
         state.current = state.queue.shift(); state.currentInput = []; state.answeredCorrectly = false; state.stage = 'build';
         document.getElementById('answerArea').classList.remove('no-pointer');
@@ -364,15 +388,15 @@ function updateScore() {
     document.getElementById('completed').textContent = state.completed;
     document.getElementById('incorrect').textContent = state.incorrect;
     const total = state.completed + state.incorrect;
-    const acc = total === 0 ? 100 : Math.round((state.completed / total) * 100);
-    document.getElementById('accuracy').textContent = acc + "%";
+    document.getElementById('accuracy').textContent = (total === 0 ? 100 : Math.round((state.completed / total) * 100)) + "%";
 }
 
 document.getElementById('startBtn').onclick = () => {
-    state = { mode: document.getElementById('mode').value, difficulty: document.getElementById('difficulty').value, 
-              givenNote: document.getElementById('givenNote').value, total: parseInt(document.getElementById('sessionLength').value),
-              completed: 0, incorrect: 0, currentInput: [], stage: 'build', answeredCorrectly: false };
+    state = { mode: document.getElementById('mode').value, difficulty: document.getElementById('difficulty').value, givenNote: document.getElementById('givenNote').value, 
+              direction: document.getElementById('direction').value, chordQuality: document.getElementById('chordQuality').value,
+              total: parseInt(document.getElementById('sessionLength').value), completed: 0, incorrect: 0, currentInput: [], stage: 'build', answeredCorrectly: false };
     const pool = getValidPool(); state.queue = [];
+    if(pool.length === 0) return alert("No valid questions in this pool.");
     while(state.queue.length < state.total) state.queue.push(...shuffle([...pool]));
     state.queue = state.queue.slice(0, state.total);
     document.getElementById('setupCard').classList.add('hidden');
