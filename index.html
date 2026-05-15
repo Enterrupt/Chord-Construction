@@ -22,7 +22,7 @@
     
     .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
     
-    #prompt { font-size: 28px; text-align: center; padding: 20px 20px 10px 20px; font-weight: 700; color: #2d3748; min-height: 48px; }
+    #prompt { font-size: 28px; text-align: center; padding: 20px 20px 10px 20px; font-weight: 700; color: #2d3748; min-height: 48px; line-height: 1.3; }
     
     #chordInputDisplay { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; margin: 20px 0; font-size: 32px; font-weight: 700; }
     .chord-slot { width: 56px; text-align: center; border-bottom: 4px solid #cbd5e0; color: #a0aec0; padding-bottom: 4px; transition: color 0.3s, border-color 0.3s; }
@@ -206,29 +206,25 @@ function getValidPool() {
     const mode = state.mode;
     const pool = [];
     if(mode === 'buildDom') {
-        const qualities = state.givenNote === 'random' ? ['Root','3rd','5th','7th'] : [state.givenNote];
         const starts = [...DISPLAY_ROWS.natural, 'Bb', 'Eb', 'Ab', 'Db', 'Gb', 'F#', 'C#'];
-        starts.forEach(s => qualities.forEach(q => {
+        starts.forEach(root => {
             try {
-                const res = buildSpecificChord(s, q, [0,4,7,10]);
+                const res = buildSpecificChord(root, 'Root', [0,4,7,10]);
                 const keyRootPitch = (noteToMidi(res[0]) + 5) % 12;
                 const keyLetter = LETTERS[(LETTERS.indexOf(res[0].charAt(0)) + 3) % 7];
                 const baseK = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[keyLetter];
                 let kDiff = (keyRootPitch - baseK + 12) % 12; if(kDiff > 6) kDiff -= 12;
                 const keyName = keyLetter + {'-1':'b','0':'','1':'#'}[kDiff];
                 if(res.every(n => [...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(n)) && keyName.length <= 2) {
-                    pool.push({prompt: `Build the Dominant 7th chord where ${q} is ${displayNote(s)}`, answer: res, key: keyName + " Major", type: 'chord'});
+                    pool.push({root, chord: res, key: keyName + " Major", type: 'chord'});
                 }
             } catch(e){}
-        }));
+        });
     } else if(mode === 'build7th') {
-        const qualities = state.givenNote === 'random' ? ['Root','3rd','5th','7th'] : [state.givenNote];
-        LETTERS.forEach(s => qualities.forEach(q => {
-            let rootIdx = (LETTERS.indexOf(s) - ['Root','3rd','5th','7th'].indexOf(q)*2);
-            while(rootIdx < 0) rootIdx += 7;
-            const res = [0,2,4,6].map(i => LETTERS[(rootIdx+i)%7]);
-            pool.push({prompt: `In C Major, build the 7th chord where ${q} is ${s}`, answer: res, type: 'chord'});
-        }));
+        LETTERS.forEach(root => {
+            const res = [0,2,4,6].map(i => LETTERS[(LETTERS.indexOf(root)+i)%7]);
+            pool.push({root, chord: res, type: 'chord'});
+        });
     } else if (mode === 'build' || mode === 'identify') {
         const dirs = state.direction === 'random' ? ['up', 'down'] : [state.direction];
         const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
@@ -242,19 +238,17 @@ function getValidPool() {
             } catch(e){}
         })));
     } else if (mode === 'buildTriad') {
-        const validPos = ['Root', '3rd', '5th'];
-        const positions = state.givenNote === 'random' ? validPos : [state.givenNote];
         const validQuals = state.chordQuality === 'random' ? ['Major', 'Minor', 'Diminished'] : [state.chordQuality];
         const semitones = { 'Major': [0,4,7], 'Minor': [0,3,7], 'Diminished': [0,3,6] };
         const starts = [...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.flat];
-        starts.forEach(s => positions.forEach(p => validQuals.forEach(q => {
+        starts.forEach(root => validQuals.forEach(q => {
             try {
-                const res = buildSpecificChord(s, p, semitones[q]);
+                const res = buildSpecificChord(root, 'Root', semitones[q]);
                 if(res.every(n => [...DISPLAY_ROWS.sharp, ...DISPLAY_ROWS.natural, ...DISPLAY_ROWS.flat].includes(n))) {
-                    pool.push({prompt: `Build the ${q} triad where ${p} is ${displayNote(s)}`, answer: res, type: 'chord'});
+                    pool.push({root, chord: res, type: 'chord', quality: q});
                 }
             } catch(e){}
-        })));
+        }));
     }
     return pool;
 }
@@ -272,9 +266,15 @@ function renderAnswerArea() {
     wrap.className = 'note-grid';
 
     if(state.stage === 'key') {
+        const promptEl = document.getElementById('prompt');
+        promptEl.style.color = "#3182ce";
+        promptEl.innerHTML = `Correct Spelling! <br><span style="font-size: 0.7em; color: #718096; font-weight: normal;">Next challenge: resolution...</span><br>What Major key includes this chord as the V7?`;
+
         const instr = document.createElement('div'); instr.className = 'instruction-note';
-        instr.textContent = "What Major key includes this chord as the V7?";
+        instr.style.fontWeight = "700"; instr.style.color = "#2d3748";
+        instr.textContent = "Select the resolving I Major key:";
         wrap.appendChild(instr);
+
         const keyGrid = document.createElement('div'); keyGrid.className = 'note-row';
         ['Cb','Gb','Db','Ab','Eb','Bb','F','C','G','D','A','E','B','F#','C#'].forEach(k => {
             const btn = document.createElement('button'); btn.className = 'note-btn'; btn.textContent = displayNote(k);
@@ -310,13 +310,15 @@ function renderAnswerArea() {
                     if(state.answeredCorrectly) return;
                     state.currentInput.push(n); updateChordDisplay();
                     if(state.currentInput.length === state.current.answer.length) {
-                        if(state.currentInput.every((v,i) => v === state.current.answer[i])) {
-                            document.querySelectorAll('.chord-slot').forEach(s => s.classList.add('correct-text'));
+                        const isCorrect = state.currentInput.every((v,i) => v === state.current.answer[i]);
+                        const slots = document.querySelectorAll('.chord-slot');
+                        if(isCorrect) {
+                            slots.forEach(s => s.classList.add('correct-text'));
                             if(state.difficulty === 'intermediate' && state.mode === 'buildDom') triggerMidAdvance();
                             else triggerAdvance();
                         } else {
                             state.incorrect++; updateScore();
-                            document.querySelectorAll('.chord-slot').forEach(s => s.classList.add('incorrect-text'));
+                            slots.forEach(s => s.classList.add('incorrect-text'));
                         }
                     }
                 };
@@ -325,7 +327,10 @@ function renderAnswerArea() {
             wrap.appendChild(row);
         });
         const clr = document.createElement('button'); clr.className = 'action-btn'; clr.textContent = '⌫ Clear';
-        clr.onclick = () => { state.currentInput = []; updateChordDisplay(); document.querySelectorAll('.chord-slot').forEach(s => s.classList.remove('incorrect-text', 'correct-text')); };
+        clr.onclick = () => { 
+            state.currentInput = []; updateChordDisplay(); 
+            document.querySelectorAll('.chord-slot').forEach(s => s.classList.remove('incorrect-text', 'correct-text'));
+        };
         wrap.appendChild(clr);
     } else if (state.current.type === 'note') {
         const instr = document.createElement('div'); instr.className = 'instruction-note';
@@ -377,8 +382,9 @@ function nextQ() {
         document.getElementById('summary').innerHTML = `<h2>Complete!</h2><p>Accuracy: ${Math.round((state.completed/(state.completed+state.incorrect))*100)}%</p>`;
     } else {
         state.current = state.queue.shift(); state.currentInput = []; state.answeredCorrectly = false; state.stage = 'build';
+        const promptEl = document.getElementById('prompt'); promptEl.style.color = "#2d3748";
         document.getElementById('answerArea').classList.remove('no-pointer');
-        document.getElementById('prompt').textContent = state.current.prompt;
+        promptEl.textContent = state.current.prompt;
         document.getElementById('nextCue').classList.add('hidden');
         renderAnswerArea(); updateChordDisplay();
     }
@@ -395,10 +401,32 @@ document.getElementById('startBtn').onclick = () => {
     state = { mode: document.getElementById('mode').value, difficulty: document.getElementById('difficulty').value, givenNote: document.getElementById('givenNote').value, 
               direction: document.getElementById('direction').value, chordQuality: document.getElementById('chordQuality').value,
               total: parseInt(document.getElementById('sessionLength').value), completed: 0, incorrect: 0, currentInput: [], stage: 'build', answeredCorrectly: false };
-    const pool = getValidPool(); state.queue = [];
-    if(pool.length === 0) return alert("No valid questions in this pool.");
-    while(state.queue.length < state.total) state.queue.push(...shuffle([...pool]));
-    state.queue = state.queue.slice(0, state.total);
+    
+    let basePool = shuffle(getValidPool());
+    state.queue = [];
+    
+    // THE NEW VARIETY LOGIC:
+    // 1. Pick a unique chord/root from the pool for each session question
+    // 2. Then decide which specific tone (Root, 3rd, etc.) to ask for
+    const tones = state.givenNote === 'random' ? ['Root','3rd','5th','7th'] : [state.givenNote];
+    const triTones = state.givenNote === 'random' ? ['Root','3rd','5th'] : [state.givenNote];
+
+    for(let i=0; i < state.total; i++) {
+        let item = basePool[i % basePool.length];
+        if (item.type === 'chord') {
+            let selectedTone = item.chord.length === 4 ? tones[Math.floor(Math.random()*tones.length)] : triTones[Math.floor(Math.random()*triTones.length)];
+            let promptText = "";
+            if(state.mode === 'buildDom') promptText = `Build the Dominant 7th chord where ${selectedTone} is ${displayNote(item.chord[['Root','3rd','5th','7th'].indexOf(selectedTone)])}`;
+            else if(state.mode === 'build7th') promptText = `In C Major, build the 7th chord where ${selectedTone} is ${item.chord[['Root','3rd','5th','7th'].indexOf(selectedTone)]}`;
+            else if(state.mode === 'buildTriad') promptText = `Build the ${item.quality} triad where ${selectedTone} is ${displayNote(item.chord[['Root','3rd','5th'].indexOf(selectedTone)])}`;
+            
+            state.queue.push({ ...item, prompt: promptText, answer: item.chord });
+        } else {
+            state.queue.push(item);
+        }
+    }
+    
+    if(state.queue.length === 0) return alert("No valid questions in this pool.");
     document.getElementById('setupCard').classList.add('hidden');
     document.getElementById('practiceCard').classList.remove('hidden');
     updateScore(); nextQ();
